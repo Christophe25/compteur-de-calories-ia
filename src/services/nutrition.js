@@ -3,7 +3,18 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const OFF_API_URL = "https://world.openfoodfacts.org/api/v2";
 
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+let genAI = null;
+
+function getGenAI() {
+  if (!genAI) {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("Clé API Gemini manquante. Configurez VITE_GEMINI_API_KEY.");
+    }
+    genAI = new GoogleGenerativeAI(apiKey);
+  }
+  return genAI;
+}
 
 /**
  * Recherche des informations nutritionnelles pour un aliment spécifique.
@@ -41,7 +52,7 @@ export const searchFoodNutrition = async (query) => {
  * @param {string} imageData - L'image en base64 (data URL).
  */
 export const analyzeImageWithAI = async (imageData) => {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = getGenAI().getGenerativeModel({ model: "gemini-2.0-flash" });
 
   // Extraire le base64 pur du data URL
   const base64Data = imageData.split(",")[1];
