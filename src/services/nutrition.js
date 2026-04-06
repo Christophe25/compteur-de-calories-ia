@@ -1,35 +1,34 @@
 // src/services/nutrition.js
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const OFF_API_URL = "https://world.openfoodfacts.org/api/v2";
 
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+
 /**
  * Recherche des informations nutritionnelles pour un aliment spécifique.
- * @param {string} query - Le nom de l'aliment identifié par l'IA.
- * @returns {Promise<Object>} - Les données nutritionnelles.
  */
 export const searchFoodNutrition = async (query) => {
   try {
-    // Dans une app réelle, on utiliserait le endpoint de recherche d'Open Food Facts
-    // Pour ce MVP, on cible la recherche par mots-clés
-    const response = await fetch(`${OFF_API_URL}/search?categories_tags=${encodeURIComponent(query)}&fields=product_name,nutriments,image_url&page_size=1`);
+    const response = await fetch(
+      `${OFF_API_URL}/search?categories_tags=${encodeURIComponent(query)}&fields=product_name,nutriments,image_url&page_size=1`
+    );
     const data = await response.json();
 
     if (data.products && data.products.length > 0) {
       const product = data.products[0];
       return {
         name: product.product_name,
-        calories: Math.round(product.nutriments['energy-kcal_100g'] || 0),
+        calories: Math.round(product.nutriments["energy-kcal_100g"] || 0),
         macros: {
           fat: product.nutriments.fat_100g || 0,
           carbs: product.nutriments.carbohydrates_100g || 0,
-          protein: product.nutriments.proteins_100g || 0
+          protein: product.nutriments.proteins_100g || 0,
         },
-        image: product.image_url
+        image: product.image_url,
       };
     }
-    
-    // Si non trouvé sur OFF (souvent le cas pour les produits frais/plats), 
-    // l'IA Vision fournira une estimation (simulée ici)
+
     return null;
   } catch (error) {
     console.error("Erreur API Open Food Facts:", error);
@@ -38,29 +37,54 @@ export const searchFoodNutrition = async (query) => {
 };
 
 /**
- * Simule l'analyse d'image par Gemini Vision
- * @param {string} imageData - L'image en base64.
+ * Analyse une image de nourriture avec Gemini Vision et retourne les infos nutritionnelles.
+ * @param {string} imageData - L'image en base64 (data URL).
  */
 export const analyzeImageWithAI = async (imageData) => {
-  // Cette fonction simulerait l'envoi de l'image à Gemini
-  // Pour le moment, nous retournons un résultat simulé de haute qualité
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        name: "Petit-déjeuner Avocat & Œufs",
-        items: [
-          { name: "Avocat", weight: "120g", calories: 192 },
-          { name: "Œuf poché", weight: "50g", calories: 72 },
-          { name: "Pain de seigle", weight: "40g", calories: 104 }
-        ],
-        totalCalories: 368,
-        totalMacros: {
-          fat: 21,
-          carbs: 42,
-          protein: 14
-        },
-        confidence: 0.96
-      });
-    }, 2000);
-  });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+  // Extraire le base64 pur du data URL
+  const base64Data = imageData.split(",")[1];
+  const mimeType = imageData.split(";")[0].split(":")[1];
+
+  const prompt = `Tu es un nutritionniste expert. Analyse cette image de nourriture et retourne UNIQUEMENT un objet JSON valide (sans markdown, sans backticks, sans texte autour) avec cette structure exacte :
+
+{
+  "name": "Nom du plat ou de l'ensemble des aliments",
+  "items": [
+    { "name": "Nom de l'aliment", "weight": "poids estimé en grammes (ex: 120g)", "calories": nombre_entier }
+  ],
+  "totalCalories": nombre_entier_total,
+  "totalMacros": {
+    "fat": nombre_entier_en_grammes,
+    "carbs": nombre_entier_en_grammes,
+    "protein": nombre_entier_en_grammes
+  },
+  "confidence": nombre_entre_0_et_1
+}
+
+Sois précis dans tes estimations de poids et calories. Si tu ne peux pas identifier clairement un aliment, donne ta meilleure estimation avec une confidence plus basse.`;
+
+  const result = await model.generateContent([
+    prompt,
+    {
+      inlineData: {
+        data: base64Data,
+        mimeType: mimeType,
+      },
+    },
+  ]);
+
+  const response = await result.response;
+  const text = response.text();
+
+  // Nettoyer la réponse (enlever les backticks markdown si présents)
+  const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.error("Erreur de parsing JSON Gemini:", text);
+    throw new Error("L'IA n'a pas pu analyser correctement l'image.");
+  }
 };

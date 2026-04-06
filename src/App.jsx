@@ -1,6 +1,14 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { analyzeImageWithAI, searchFoodNutrition } from './services/nutrition';
 import './App.css';
+
+const TAG_POSITIONS = [
+  { top: '28%', left: '35%' },
+  { top: '55%', left: '30%' },
+  { top: '40%', left: '68%' },
+  { top: '70%', left: '55%' },
+  { top: '25%', left: '60%' },
+];
 
 const App = () => {
   const [isScanning, setIsScanning] = useState(false);
@@ -13,8 +21,8 @@ const App = () => {
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -28,18 +36,16 @@ const App = () => {
 
   const stopCamera = () => {
     if (videoRef.current && videoRef.current.srcObject) {
-      const tracks = videoRef.current.srcObject.getTracks();
-      tracks.forEach(track => track.stop());
+      videoRef.current.srcObject.getTracks().forEach(track => track.stop());
       setIsScanning(false);
     }
   };
 
   const captureAndAnalyze = async () => {
     if (!videoRef.current) return;
-    
+
     setIsAnalyzing(true);
-    
-    // Capture de l'image
+
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
     canvas.width = videoRef.current.videoWidth;
@@ -47,27 +53,23 @@ const App = () => {
     context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
     const imageData = canvas.toDataURL('image/jpeg');
     setCapturedImage(imageData);
-    
-    // On arrête la caméra
+
     stopCamera();
 
     try {
-      // Analyse IA (Simulée avec Gemini Vision)
       const result = await analyzeImageWithAI(imageData);
-      
-      // Optionnel : Recherche de données supplémentaires sur Open Food Facts
-      // pour le premier item détecté par exemple
+
       if (result.items.length > 0) {
         const offData = await searchFoodNutrition(result.items[0].name.toLowerCase());
         if (offData) {
           console.log("Données OFF trouvées:", offData);
-          // On pourrait enrichir le résultat ici
         }
       }
 
       setAnalysisResult(result);
       setShowDashboard(true);
     } catch (error) {
+      console.error("Erreur analyse:", error);
       alert("Erreur lors de l'analyse. Veuillez réessayer.");
     } finally {
       setIsAnalyzing(false);
@@ -81,13 +83,18 @@ const App = () => {
     startCamera();
   };
 
+  const getMacroPercent = (value, type) => {
+    const dailyGoals = { fat: 70, carbs: 300, protein: 60 };
+    return Math.min(100, Math.round((value / dailyGoals[type]) * 100));
+  };
+
   return (
     <div className="container animate-fade-in">
       {!showDashboard ? (
         <div className="scanner-container">
           <header>
             <h1>CaloScan IA</h1>
-            <p className="text-muted">Analyse nutritionnelle instantanée</p>
+            <p>Scannez votre repas, l'IA fait le reste</p>
           </header>
 
           <div className="viewport glass-panel">
@@ -97,23 +104,23 @@ const App = () => {
                   <span className="camera-icon">📸</span>
                 </div>
                 <button className="btn-primary" onClick={startCamera}>
-                  Démarrer le Scan
+                  Lancer le scan
                 </button>
               </div>
             )}
-            
-            <video 
-              ref={videoRef} 
-              autoPlay 
-              playsInline 
-              muted 
+
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
               className={`camera-feed ${isScanning ? 'visible' : 'hidden'}`}
             />
-            
+
             {isAnalyzing && (
               <div className="analysis-overlay">
                 <div className="pulse-circle"></div>
-                <p className="shimmer-text">Analyse de l'assiette en cours...</p>
+                <p className="shimmer-text">Analyse en cours...</p>
               </div>
             )}
 
@@ -122,8 +129,8 @@ const App = () => {
 
           {isScanning && (
             <div className="controls">
-              <button 
-                className="capture-btn" 
+              <button
+                className="capture-btn"
                 onClick={captureAndAnalyze}
                 disabled={isAnalyzing}
                 aria-label="Prendre une photo"
@@ -137,21 +144,32 @@ const App = () => {
         <div className="dashboard-container">
           <header className="dash-header">
             <button className="btn-back" onClick={resetScanner} aria-label="Retour">
-              ✕
+              ←
             </button>
             <div className="header-titles">
-              <h2>Analyse Terminée</h2>
-              <span className="confidence-pill">IA confiante à {(analysisResult.confidence * 100).toFixed(0)}%</span>
+              <h2>Résultat</h2>
+              <span className="confidence-pill">
+                Confiance {(analysisResult.confidence * 100).toFixed(0)}%
+              </span>
             </div>
           </header>
 
           <div className="result-card glass-card">
             <div className="image-preview">
               <img src={capturedImage} alt="Aliments analysés" />
-              {/* Simulation de tags visuels sur l'image */}
-              <div className="floating-tag" style={{ top: '30%', left: '40%' }}>Avocat</div>
-              <div className="floating-tag" style={{ top: '60%', left: '30%' }}>Pain</div>
-              <div className="floating-tag" style={{ top: '45%', left: '65%' }}>Œuf</div>
+              {analysisResult.items.slice(0, 5).map((item, idx) => (
+                <div
+                  key={idx}
+                  className="floating-tag"
+                  style={{
+                    top: TAG_POSITIONS[idx]?.top || '50%',
+                    left: TAG_POSITIONS[idx]?.left || '50%',
+                    animationDelay: `${idx * 0.15}s`,
+                  }}
+                >
+                  {item.name}
+                </div>
+              ))}
             </div>
 
             <div className="total-score">
@@ -165,21 +183,42 @@ const App = () => {
 
           <div className="macros-grid">
             <div className="macro-item glass-card">
+              <span className="macro-icon">🔥</span>
               <span className="macro-val">{analysisResult.totalMacros.fat}g</span>
               <span className="macro-label">Lipides</span>
+              <div className="macro-bar">
+                <div
+                  className="macro-bar-fill"
+                  style={{ width: `${getMacroPercent(analysisResult.totalMacros.fat, 'fat')}%` }}
+                />
+              </div>
             </div>
             <div className="macro-item glass-card">
+              <span className="macro-icon">⚡</span>
               <span className="macro-val">{analysisResult.totalMacros.carbs}g</span>
               <span className="macro-label">Glucides</span>
+              <div className="macro-bar">
+                <div
+                  className="macro-bar-fill"
+                  style={{ width: `${getMacroPercent(analysisResult.totalMacros.carbs, 'carbs')}%` }}
+                />
+              </div>
             </div>
             <div className="macro-item glass-card">
+              <span className="macro-icon">💪</span>
               <span className="macro-val">{analysisResult.totalMacros.protein}g</span>
               <span className="macro-label">Protéines</span>
+              <div className="macro-bar">
+                <div
+                  className="macro-bar-fill"
+                  style={{ width: `${getMacroPercent(analysisResult.totalMacros.protein, 'protein')}%` }}
+                />
+              </div>
             </div>
           </div>
 
           <div className="details-section glass-card">
-            <h3>Détails par portion</h3>
+            <h3>Détail par aliment</h3>
             <div className="items-list">
               {analysisResult.items.map((item, idx) => (
                 <div key={idx} className="food-item">
@@ -195,9 +234,11 @@ const App = () => {
           </div>
 
           <div className="actions">
-            <button className="btn-secondary" onClick={resetScanner}>Resscaner</button>
-            <button className="btn-primary" onClick={() => alert("Consommation enregistrée !")}>
-              Enregistrer le repas
+            <button className="btn-secondary" onClick={resetScanner}>
+              Rescanner
+            </button>
+            <button className="btn-primary" onClick={() => alert("Repas enregistré !")}>
+              Enregistrer
             </button>
           </div>
         </div>
